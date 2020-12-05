@@ -1,0 +1,397 @@
+<html>
+    <head>
+
+        <meta name = "viewport" content = "width=device-width">
+
+        <title>Denzill's Game</title>
+
+        <style>
+
+            * {margin:0; overflow:hidden; padding:0;}
+
+            html{height:100%; width:100%;}
+
+            body{background-color:#000000; display:grid; height:100%; width:100%;}
+
+            canvas {align-self:center; justify-self:center;}
+
+        </style>
+
+    </head>
+
+    <body>
+
+        <canvas></canvas>
+
+        <script type = "text/javascript">
+
+            const Controller = function() {
+
+                this.left = this.right = this.up = this.shoot = false;
+
+            };
+
+            Controller.prototype.keyDownUp = function(event) {
+
+            var down = event.type == "keydown" ? true : false;
+
+            switch(event.keyCode) {
+
+                case 37: this.left = down; break;   // left arrow
+                case 90: this.up = down; break;     // z key
+                case 88: this.shoot = down; break;  // x key
+                case 39: this.right = down; break;  // right arrow
+            }
+
+        };
+
+        const Bullet = function(x, y, d, vx){
+
+            this.x = x; this.y = y; this.d = d; this.vx = 5 * d + (vx / 2);
+        };
+
+        Bullet.prototype = {
+
+            updatePosition:function() {
+
+                this.x += this.vx;
+            }
+        };
+
+   
+        const Player = function(x, y, d){
+
+            // d is for direction: 1 is left, -1 is right
+            this.x = x; this.y = y; this.d = d;
+            this.sourceX = 64;
+            this.dead = false;
+            this.jumping = false;
+            this.shooting = false;
+            this.vx = 0; this.vy = 0;
+        };
+
+        Player.prototype = {
+
+            jump:function(){
+
+                if(!this.jumping){
+                    this.jumping = true;
+                    this.vy = -15;
+                }
+            },
+            
+            updatePosition:function(){
+
+                this.x += this.vx;
+                this.y += this.vy;
+
+                if(this.vx < 0){
+                    this.d = -1;
+                    this.sourceX = 64;  // character facing left
+                } else {
+                    this.d = 1;
+                    this.sourceX = 80;  // character facing right
+                }
+
+                this.vx *= 0.9;
+                this.vy *= 0.9;
+            }
+        };
+
+        const Ghost = function(x, y){
+            this.x = x; this.y = y;
+            this.sourceX = 96;  // 7th sprite in tile sheet
+            this.vx = 0; this.vy = 0;
+            this.destinationX = x;
+            this.state = "waiting";
+        };
+
+        Ghost.prototype = {
+
+            updatePosition:function(){
+
+                let d = this.destinationX - this.x;
+
+                this.vx += d * 0.005;
+                
+                // once close enough to destination, randomly pick new destination to travel to
+				if (d * d < 16) this.destinationX = Math.random() * columns * tileSize - tileSize;
+
+				if (this.vx > 0.6) this.vx = 0.6;
+				else if (this.vx < -0.6) this.vx = -0.6;
+
+				this.x += this.vx;
+
+                this.vx *= 0.9;
+            },
+
+            fall:function(){
+               
+               switch(this.state) {
+
+                case "waiting":
+                    if(player.x + tileSize > this.x && player.x + tileSize < this.x + tileSize){
+                        this.state = "falling"; return;
+                    }   break;
+
+                case "falling":
+                    this.vy += 1;
+                    this.y += this.vy;
+                    this.vy *= 0.7;
+
+                    if(this.y > 164) {
+                        this.y = 164;
+                        this.vy = 0;
+                        this.state = "rising";
+                    }   break;
+              
+                case "rising":
+                    this.vy = -0.7;
+                    this.y += this.vy;
+
+                    if(this.y < 50){
+                        this.y = 50;
+                        this.vy = 0;
+                        this.state = "waiting";
+                    }   break;
+               }
+            }
+        };
+
+        const Fox = function(x, y){
+            this.x = x; this.y = y;
+            this.sourceX = 112;     // 8th sprite in tile sheet
+            this.vx = 0; this.vy = 0;
+            this.destinationX = x;
+        };
+
+        Fox.prototype = {
+            updatePosition:function(){
+
+            let d = this.destinationX - this.x;
+
+            this.vx += d * 0.01;
+
+            // once close enough to destination, randomly pick new destination to travel to
+            if (d * d < 16) this.destinationX = Math.random() * columns * tileSize - tileSize;
+
+            if (this.vx > 0.8) this.vx = 0.8;
+            else if (this.vx < -0.8) this.vx = -0.8;
+
+            this.x += this.vx;
+
+            this.vx *= 0.9;
+
+}
+
+        };
+
+            var tileSheet = new Image();
+
+            var score = 0;
+            var columns = 16; var rows = 16;
+            var tileSize = 16;
+
+            // tile map takes in values from tile sheet
+            var map = [1,1,0,0,1,1,0,0,0,1,0,1,1,1,0,1,
+					   0,1,0,0,0,1,0,0,1,1,0,1,0,1,1,0,
+					   0,0,0,1,0,0,0,1,0,1,0,0,0,1,0,1,
+					   1,0,1,0,0,0,0,1,1,0,1,0,0,0,0,0,
+					   0,0,1,1,1,0,0,1,0,0,1,0,0,1,0,0,
+					   1,1,1,0,1,0,0,0,0,0,0,1,1,0,0,0,
+					   1,0,0,1,0,0,1,1,0,0,0,0,1,1,0,1,
+					   0,1,1,0,0,0,1,0,0,0,0,0,1,1,0,0,
+                       0,0,0,1,1,0,0,0,0,0,1,0,1,0,1,0,						 
+                       1,0,0,0,1,0,0,1,1,1,0,0,0,0,0,0,
+					   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+					   2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
+					   3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,
+					   3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,
+					   3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,
+                       3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3];
+                       
+            var context = document.querySelector("canvas").getContext("2d");
+            var buffer = document.createElement("canvas").getContext("2d");
+
+            var height = document.documentElement.clientHeight - 16;
+            var width = document.documentElement.clientWidth - 16;
+
+            var controller = new Controller();
+
+            var player = new Player(125, 164, -1);
+
+            var ghost = new Ghost(50, 50);
+
+            var fox1 = new Fox(25, 164);
+
+            var fox2 = new Fox(10000, -200);
+
+            setTimeout(function(){fox2.x = 240; fox2.y = 164;}, 5000);
+
+            var bullets = new Array();
+
+            function loop() {
+
+                window.requestAnimationFrame(loop);
+
+                // adds black padding around game window
+                height = document.documentElement.clientHeight - 16;
+                width = document.documentElement.clientWidth - 16;
+
+                // keeps 1:1 aspect ratio when resizing browser
+                var minSize = height < width ? height : width;
+
+                context.canvas.height = minSize;
+                context.canvas.width = minSize;
+
+                // loading in tile map from tile sheet
+                for(let index = map.length - 1; index > -1; --index){
+
+                    let value = map[index];
+                    let tileX = (index % columns) * tileSize;
+                    let tileY = Math.floor(index / columns) * tileSize;
+
+                    buffer.drawImage(tileSheet, value * tileSize, 0, tileSize, tileSize, tileX, tileY, tileSize, tileSize);
+
+                }
+
+                player.vy += 1;
+
+                if(controller.left){
+                    player.vx -= 0.4;
+                }
+
+                if(controller.right){
+                    player.vx += 0.4;
+                }
+
+                if(controller.shoot && !player.shooting){
+                    bullets.push(new Bullet(player.x + tileSize * 0.5 - 2 + player.d * 4, player.y + 8, player.d, player.vx));
+                    player.shooting = true;
+                    setTimeout(function(){player.shooting = false;}, 500);  // half-second cooldown on shots
+                }
+
+                if(controller.up){
+                    player.jump();
+                }
+
+
+                ghost.fall();
+
+                player.updatePosition();
+
+                ghost.updatePosition();
+
+                fox1.updatePosition();
+
+                fox2.updatePosition();
+
+                // player-floor collision detection
+                if(player.y + tileSize > tileSize * 11 + 4) {
+                    player.y = tileSize * 10 + 4;
+                    player.jumping = false;
+                    player.vy = 0;
+                }
+
+                if(player.x > fox1.x && player.x < fox1.x){
+                    player.y = 100;
+                }
+
+                // keeps track of all bullets
+                for (let index = bullets.length - 1; index > -1; --index){
+
+                    let bullet = bullets[index];
+
+                    bullet.updatePosition();
+
+                    // drawing bullet to screen
+                    buffer.fillStyle = "#000000";
+                    buffer.fillRect(bullet.x, bullet.y, 4, 4);
+
+                    // if bullet collides with enemies
+                    if(bullet.x > fox1.x && bullet.x < fox1.x + 14 &&
+                      (bullet.y > 164 && bullet.y < 182)) {
+                        bullets.splice(index, 1);
+                        score += 50;
+                        fox1.x = -1000;
+                        setTimeout(function(){fox1.x = 10; fox1.y = 164;}, 1000)    // one second respawn
+                   }
+
+                   if(bullet.x > fox2.x && bullet.x < fox2.x + 164 &&
+                     (bullet.y > 164 && bullet.y < 182)){
+                        bullets.splice(index, 1);
+                        score += 50;
+                        fox2.x = 400;
+                        setTimeout(function(){fox2.x = 240; fox2.y = 164;}, 1000);  // one second respawn
+                   }
+
+                   if(bullet.x > ghost.x && bullet.x < ghost.x + 14 &&
+                     (ghost.y > 100) && bullet.y < ghost.y + 16) {
+                        bullets.splice(index, 1);
+                        score += 100;
+                        ghost.x = -1000;
+                        setTimeout(function(){ghost.x = 10;}, 1500) // 1 1/2 second respawn
+                   }
+
+                    // if bullet leaves the screen, get rid of it
+                    if(bullet.x < -4 || bullet.x > buffer.canvas.width) {
+                        bullets.splice(index, 1);
+                    }
+                }
+
+                // if player collides with enemies
+                if(player.x > fox1.x && player.x < fox1.x + 14 &&
+                   player.y > 148) {
+                    player.dead = true;
+                }
+
+                if(player.x > fox2.x && player.x < fox2.x + 14 &&
+                   player.y > 148) {
+                    player.dead = true;
+                }
+
+                if(player.x > ghost.x && player.x < ghost.x + 16 &&
+                   (ghost.y > 120 && player.y < ghost.y + 16)) {
+                    player.dead = true;
+                }
+
+                // draw everything to screen
+                buffer.drawImage(tileSheet, player.sourceX, 0, tileSize, tileSize, player.x, player.y, tileSize, tileSize);
+
+                buffer.drawImage(tileSheet, ghost.sourceX, 0, tileSize, tileSize, ghost.x, ghost.y, tileSize, tileSize);
+
+                buffer.drawImage(tileSheet, fox1.sourceX, 0, tileSize, tileSize, fox1.x, fox1.y, tileSize, tileSize);
+
+                buffer.drawImage(tileSheet, fox2.sourceX, 0, tileSize, tileSize, fox2.x, fox2.y, tileSize, tileSize);
+
+                context.drawImage(buffer.canvas, 0, 0, buffer.canvas.width, buffer.canvas.height, 0, 0,
+                context.canvas.width, context.canvas.height);
+
+                if(player.dead){
+                    player.x = -1000;
+                    context.font = "32px Arial";
+                    context.fillStyle = "#0095DD";
+                    context.fillText("You Died! Score: "+score, 150, 100);
+                }
+
+                context.font = "16px Arial";
+                context.fillStyle = "#0095DD";
+                context.fillText("Score: "+score, 8, 20);
+            }
+
+            buffer.canvas.height = tileSize * rows;
+            buffer.canvas.width = tileSize * columns;
+            buffer.imageSmoothingEnabled = false;
+
+            tileSheet.addEventListener("load", (event) => { loop(); });
+
+            tileSheet.src = "shoot.png";
+
+            window.addEventListener("keydown", (event) => { controller.keyDownUp(event); });
+			window.addEventListener("keyup", (event) => { controller.keyDownUp(event); });
+
+        </script>
+
+    </body>
+
+</html>
